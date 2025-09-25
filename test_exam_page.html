@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Exam Page</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .test-result { padding: 10px; margin: 10px 0; border-radius: 5px; }
+        .success { background: #d4edda; border: 1px solid #c3e6cb; color: #155724; }
+        .error { background: #f8d7da; border: 1px solid #f5c6cb; color: #721c24; }
+        .info { background: #d1ecf1; border: 1px solid #bee5eb; color: #0c5460; }
+    </style>
+</head>
+<body>
+    <h1>Exam Page Test</h1>
+    <div id="results"></div>
+    
+    <script>
+        async function testExamPage() {
+            const results = document.getElementById('results');
+            
+            function addResult(message, type = 'info') {
+                const div = document.createElement('div');
+                div.className = `test-result ${type}`;
+                div.textContent = message;
+                results.appendChild(div);
+            }
+            
+            try {
+                addResult('🧪 Testing Exam Page...', 'info');
+                
+                // Test 1: Check if we can access the exam page
+                addResult('1. Testing exam page access...', 'info');
+                const examPageResponse = await fetch('http://localhost:3000/exam');
+                if (examPageResponse.ok) {
+                    addResult('✅ Exam page is accessible', 'success');
+                } else {
+                    addResult('❌ Exam page returned status: ' + examPageResponse.status, 'error');
+                }
+                
+                // Test 2: Check backend health
+                addResult('2. Testing backend health...', 'info');
+                const healthResponse = await fetch('http://localhost:5000/api/health');
+                const healthData = await healthResponse.json();
+                if (healthData.questions_loaded) {
+                    addResult(`✅ Backend healthy - ${healthData.question_count} questions loaded`, 'success');
+                } else {
+                    addResult('❌ Backend not ready', 'error');
+                }
+                
+                // Test 3: Test exam start
+                addResult('3. Testing exam start...', 'info');
+                const startResponse = await fetch('http://localhost:5000/api/exam/start', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                });
+                const startData = await startResponse.json();
+                if (startData.success) {
+                    addResult(`✅ Exam started - ${startData.total_questions} questions`, 'success');
+                } else {
+                    addResult('❌ Failed to start exam: ' + startData.error, 'error');
+                }
+                
+                // Test 4: Test question loading
+                addResult('4. Testing question loading...', 'info');
+                const questionResponse = await fetch('http://localhost:5000/api/exam/question/0');
+                const questionData = await questionResponse.json();
+                if (questionData.success) {
+                    addResult(`✅ Question loaded - "${questionData.question.question.substring(0, 50)}..."`, 'success');
+                } else {
+                    addResult('❌ Failed to load question: ' + questionData.error, 'error');
+                }
+                
+                addResult('🎉 All tests completed!', 'success');
+                
+            } catch (error) {
+                addResult('❌ Test failed: ' + error.message, 'error');
+            }
+        }
+        
+        // Run tests when page loads
+        testExamPage();
+    </script>
+</body>
+</html>
+
