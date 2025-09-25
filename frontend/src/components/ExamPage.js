@@ -10,6 +10,7 @@ const ExamPage = () => {
   const [selectedAnswer, setSelectedAnswer] = useState('');
   const [selectedAnswers, setSelectedAnswers] = useState([]);
   const [answers, setAnswers] = useState({});
+  const [gradedAnswers, setGradedAnswers] = useState({});
   const [timeRemaining, setTimeRemaining] = useState(120);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -97,6 +98,11 @@ const ExamPage = () => {
   };
 
   const handleAnswerSelect = (answer) => {
+    // Don't allow changing answers after grading
+    if (gradedAnswers[currentQuestion]) {
+      return;
+    }
+
     // Check if this is a multiple choice question by looking for patterns in the question text
     const questionText = currentQuestionData?.question?.toLowerCase() || '';
     const isMultipleChoice = questionText.includes('choose two') || 
@@ -120,6 +126,7 @@ const ExamPage = () => {
           ...prevAnswers,
           [currentQuestion]: answerString
         }));
+        
         return newAnswers;
       });
     } else {
@@ -136,37 +143,51 @@ const ExamPage = () => {
   const submitAnswer = async () => {
     try {
       const backendUrl = 'http://localhost:5000';
-      await axios.post(`${backendUrl}/api/exam/answer`, {
+      const response = await axios.post(`${backendUrl}/api/exam/answer`, {
         question_id: currentQuestion,
         answer: selectedAnswer
       });
+      
+      if (response.data.success) {
+        // Store the grading result
+        setGradedAnswers(prev => ({
+          ...prev,
+          [currentQuestion]: {
+            is_correct: response.data.is_correct,
+            correct_answer: response.data.correct_answer,
+            correct_choice_text: response.data.correct_choice_text,
+            explanation: response.data.explanation,
+            user_answer: response.data.user_answer
+          }
+        }));
+      }
     } catch (err) {
       console.error('Error submitting answer:', err);
     }
   };
 
-  const handleNext = () => {
-    if (selectedAnswer) {
-      submitAnswer();
+  const handleSubmit = async () => {
+    if (!selectedAnswer) {
+      alert('Please select an answer before submitting.');
+      return;
     }
+    
+    await submitAnswer();
+  };
+
+  const handleNext = () => {
     if (currentQuestion < examData.total_questions - 1) {
       loadQuestion(currentQuestion + 1);
     }
   };
 
   const handlePrevious = () => {
-    if (selectedAnswer) {
-      submitAnswer();
-    }
     if (currentQuestion > 0) {
       loadQuestion(currentQuestion - 1);
     }
   };
 
   const handleQuestionSelect = (questionIndex) => {
-    if (selectedAnswer) {
-      submitAnswer();
-    }
     loadQuestion(questionIndex);
   };
 
@@ -198,6 +219,7 @@ const ExamPage = () => {
   };
 
   const answeredQuestions = Object.keys(answers).length;
+  const gradedQuestions = Object.keys(gradedAnswers).length;
   const progressPercentage = examData ? (answeredQuestions / examData.total_questions) * 100 : 0;
 
   if (loading) {
@@ -246,6 +268,10 @@ const ExamPage = () => {
             <div className="stat-value">{answeredQuestions}/{examData.total_questions}</div>
           </div>
           <div className="stat-item">
+            <div className="stat-label">Graded</div>
+            <div className="stat-value">{gradedQuestions}/{examData.total_questions}</div>
+          </div>
+          <div className="stat-item">
             <div className="stat-label">Time Remaining</div>
             <div className="stat-value">{formatTime(timeRemaining)}</div>
           </div>
@@ -271,90 +297,167 @@ const ExamPage = () => {
         )}
       </div>
 
-      {/* Question */}
-      <div className="question-container">
-        <div className="question-header">
-          <div className="question-number">
-            Question {currentQuestion + 1} of {examData.total_questions}
-          </div>
-          <div className="question-timer">
-            {formatTime(timeRemaining)} remaining
-          </div>
-        </div>
-
-        <div className="question-text">
-          {question?.question}
-        </div>
-
-        <div className="choices-container">
-          {question?.choices?.map((choice, index) => {
-            const questionText = question?.question?.toLowerCase() || '';
-            const isMultipleChoice = questionText.includes('choose two') || 
-                                   questionText.includes('select two') ||
-                                   questionText.includes('choose all') || 
-                                   questionText.includes('select all') ||
-                                   questionText.includes('which two') ||
-                                   questionText.includes('which three') ||
-                                   questionText.includes('multiple') ||
-                                   (question?.choices?.length > 6);
-            const isSelected = isMultipleChoice 
-              ? selectedAnswers.includes(choice.letter)
-              : selectedAnswer === choice.letter;
-            
-            return (
-              <div
-                key={index}
-                className={`choice-item ${isSelected ? 'selected' : ''}`}
-                onClick={() => handleAnswerSelect(choice.letter)}
-              >
-                <div className="choice-letter">
-                  {isMultipleChoice ? (
-                    isSelected ? '☑' : '☐'
-                  ) : (
-                    choice.letter + '.'
-                  )}
-                </div>
-                <div className="choice-text">{choice.text}</div>
+      {/* Main Content Area */}
+      <div className="exam-main-content">
+        {/* Question Section */}
+        <div className="question-section">
+          <div className="question-container">
+            <div className="question-header">
+              <div className="question-number">
+                Question {currentQuestion + 1} of {examData.total_questions}
               </div>
-            );
-          })}
-        </div>
-      </div>
+              <div className="question-timer">
+                {formatTime(timeRemaining)} remaining
+              </div>
+            </div>
 
-      {/* Navigation */}
-      <div className="exam-navigation">
-        <div className="nav-buttons">
-          <button 
-            className="btn btn-secondary" 
-            onClick={handlePrevious}
-            disabled={currentQuestion === 0}
-          >
-            <ArrowLeft size={16} style={{ marginRight: '5px' }} />
-            Previous
-          </button>
-          
-          <button 
-            className="btn" 
-            onClick={handleNext}
-            disabled={currentQuestion === examData.total_questions - 1}
-          >
-            Next
-            <ArrowRight size={16} style={{ marginLeft: '5px' }} />
-          </button>
+            <div className="question-text">
+              {question?.question}
+            </div>
+
+            <div className="choices-container">
+              {question?.choices?.map((choice, index) => {
+                const questionText = question?.question?.toLowerCase() || '';
+                const isMultipleChoice = questionText.includes('choose two') || 
+                                       questionText.includes('select two') ||
+                                       questionText.includes('choose all') || 
+                                       questionText.includes('select all') ||
+                                       questionText.includes('which two') ||
+                                       questionText.includes('which three') ||
+                                       questionText.includes('multiple') ||
+                                       (question?.choices?.length > 6);
+                const isSelected = isMultipleChoice 
+                  ? selectedAnswers.includes(choice.letter)
+                  : selectedAnswer === choice.letter;
+                
+                // Get grading result for this question
+                const grading = gradedAnswers[currentQuestion];
+                const isGraded = grading !== undefined;
+                
+                // Handle multiple correct answers (e.g., "AD", "BC")
+                let isCorrect = false;
+                let isUserAnswer = false;
+                
+                if (grading) {
+                  // Use the structured data from backend if available, otherwise fallback to parsing
+                  const correctLetters = grading.correct_letters || 
+                    (grading.correct_answer ? grading.correct_answer.split('').map(l => l.toUpperCase()) : []);
+                  const userLetters = grading.user_letters || 
+                    (grading.user_answer ? grading.user_answer.split('').map(l => l.toUpperCase()) : []);
+                  
+                  isCorrect = correctLetters.includes(choice.letter.toUpperCase());
+                  isUserAnswer = userLetters.includes(choice.letter.toUpperCase());
+                }
+                
+                let choiceClass = 'choice-item';
+                if (isSelected) choiceClass += ' selected';
+                if (isGraded) {
+                  if (isCorrect) choiceClass += ' correct';
+                  else if (isUserAnswer && !isCorrect) choiceClass += ' incorrect';
+                }
+                
+                return (
+                  <div
+                    key={index}
+                    className={choiceClass}
+                    onClick={() => handleAnswerSelect(choice.letter)}
+                    style={{
+                      pointerEvents: isGraded ? 'none' : 'auto',
+                      opacity: isGraded && !isCorrect && !isUserAnswer ? 0.6 : 1
+                    }}
+                  >
+                    <div className="choice-letter">
+                      {isGraded ? (
+                        isCorrect ? '✓' : (isUserAnswer ? '✗' : (isMultipleChoice ? '☐' : choice.letter + '.'))
+                      ) : (
+                        isMultipleChoice ? (isSelected ? '☑' : '☐') : (choice.letter + '.')
+                      )}
+                    </div>
+                    <div className="choice-text">{choice.text}</div>
+                    {isGraded && isCorrect && (
+                      <div className="correct-indicator">Correct Answer</div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+            
+            {/* Show explanation if question is graded */}
+            {gradedAnswers[currentQuestion] && (
+              <div className="explanation-container">
+                <div className={`explanation ${gradedAnswers[currentQuestion].is_correct ? 'correct' : 'incorrect'}`}>
+                  <h4>
+                    {gradedAnswers[currentQuestion].is_correct ? '✅ Correct!' : '❌ Incorrect'}
+                  </h4>
+                  <p>{gradedAnswers[currentQuestion].explanation}</p>
+                </div>
+              </div>
+            )}
+
+            {/* Question Action Buttons */}
+            <div className="question-actions">
+              <button 
+                className="btn btn-primary" 
+                onClick={handleSubmit}
+                disabled={!selectedAnswer || gradedAnswers[currentQuestion] !== undefined}
+              >
+                Submit Answer
+              </button>
+              
+              <div className="nav-buttons">
+                <button 
+                  className="btn btn-secondary" 
+                  onClick={handlePrevious}
+                  disabled={currentQuestion === 0}
+                >
+                  <ArrowLeft size={16} style={{ marginRight: '5px' }} />
+                  Previous
+                </button>
+                
+                <button 
+                  className="btn btn-primary" 
+                  onClick={handleNext}
+                  disabled={currentQuestion === examData.total_questions - 1}
+                >
+                  Next
+                  <ArrowRight size={16} style={{ marginLeft: '5px' }} />
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
 
-        <div className="question-grid">
-          {Array.from({ length: examData.total_questions }, (_, index) => (
-            <button
-              key={index}
-              className={`question-grid-btn ${
-                answers[index] ? 'answered' : ''
-              } ${index === currentQuestion ? 'current' : ''}`}
-              onClick={() => handleQuestionSelect(index)}
-            >
-              {index + 1}
-            </button>
-          ))}
+        {/* Question Grid Section */}
+        <div className="question-grid-section">
+          <div className="question-grid-container">
+            <h3>Questions</h3>
+            <div className="question-grid">
+              {Array.from({ length: examData.total_questions }, (_, index) => {
+                const isGraded = gradedAnswers[index] !== undefined;
+                const isCorrect = isGraded && gradedAnswers[index].is_correct;
+                const isAnswered = answers[index];
+                
+                return (
+                  <button
+                    key={index}
+                    className={`question-grid-btn ${
+                      isAnswered ? 'answered' : ''
+                    } ${index === currentQuestion ? 'current' : ''} ${
+                      isGraded ? (isCorrect ? 'graded' : 'graded incorrect') : ''
+                    }`}
+                    onClick={() => handleQuestionSelect(index)}
+                  >
+                    {index + 1}
+                    {isGraded && (
+                      <span className="grade-indicator">
+                        {isCorrect ? '✓' : '✗'}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
         </div>
       </div>
 

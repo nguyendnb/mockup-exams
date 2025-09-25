@@ -82,9 +82,14 @@ def load_questions():
                 for i in range(1, 7):
                     choice_key = f'choices__{i:03d}'
                     if choice_key in row and pd.notna(row[choice_key]) and str(row[choice_key]).strip():
+                        choice_text = str(row[choice_key]).strip()
+                        # Remove the letter prefix (A., B., C., etc.) from the choice text
+                        if choice_text.startswith(chr(64 + i) + '.'):
+                            choice_text = choice_text[2:].strip()
+                        
                         question_data['choices'].append({
                             'letter': chr(64 + i),  # A, B, C, D, E, F
-                            'text': str(row[choice_key]).strip()
+                            'text': choice_text
                         })
                 
                 questions.append(question_data)
@@ -208,7 +213,7 @@ def get_question(question_id):
 
 @app.route('/api/exam/answer', methods=['POST'])
 def submit_answer():
-    """Submit an answer for a question"""
+    """Submit an answer for a question and return immediate grading"""
     global current_exam
     
     if not current_exam:
@@ -227,9 +232,50 @@ def submit_answer():
     # Store the answer
     current_exam['answers'][question_id] = answer
     
+    # Get the question and grade the answer immediately
+    question = current_exam['questions'][question_id]
+    correct_answer = question['correct_answer']
+    
+    # Check if answer is correct (normalize both answers)
+    user_answer_normalized = answer.strip().upper()
+    correct_answer_normalized = correct_answer.strip().upper()
+    
+    # Handle multiple choice questions (e.g., "AD", "BC", etc.)
+    # Sort both answers to compare them properly
+    user_letters = sorted(list(user_answer_normalized))
+    correct_letters = sorted(list(correct_answer_normalized))
+    is_correct = user_letters == correct_letters
+    
+    print(f"Debug: User answer: '{answer}' -> '{user_answer_normalized}' -> {user_letters}")
+    print(f"Debug: Correct answer: '{correct_answer}' -> '{correct_answer_normalized}' -> {correct_letters}")
+    print(f"Debug: Is correct: {is_correct}")
+    
+    # Find all correct choices for explanation
+    correct_choices = []
+    for choice in question['choices']:
+        if choice['letter'].upper() in correct_letters:
+            correct_choices.append(choice)
+    
+    # Generate explanation based on question data
+    explanation = f"The correct answer is {correct_answer}."
+    if correct_choices:
+        choice_texts = [f"{choice['letter']}. {choice['text']}" for choice in correct_choices]
+        explanation += f" {' '.join(choice_texts)}"
+    
+    # Add additional context if available
+    if question.get('user_data') and question['user_data'].strip():
+        explanation += f"\n\nAdditional context: {question['user_data']}"
+    
     return jsonify({
         'success': True,
-        'message': 'Answer submitted successfully'
+        'is_correct': is_correct,
+        'correct_answer': correct_answer,
+        'correct_letters': correct_letters,
+        'user_letters': user_letters,
+        'correct_choices': [{'letter': choice['letter'], 'text': choice['text']} for choice in correct_choices],
+        'explanation': explanation,
+        'user_answer': answer,
+        'question_id': question_id
     })
 
 @app.route('/api/exam/submit', methods=['POST'])
